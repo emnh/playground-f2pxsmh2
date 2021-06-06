@@ -181,67 +181,68 @@ inline int clz_u128 (__uint128_t u) {
   return retval[idx];
 }
 
-class mybitset {
+template <class T>
+class mybitsetT {
 public:
-  __uint128_t data;
+  T data;
 
-  mybitset() {
+  mybitsetT<T>() {
     data = 0;
   }
 
-  mybitset(__uint128_t data) {
+  mybitsetT<T>(T data) {
     this->data = data;
   }
 
-  const mybitset boundsLimit() const {
-    return mybitset(data & (((__uint128_t) 1 << cellCount) - (__uint128_t) 1));
+  const mybitsetT<T> boundsLimit() const {
+    return mybitsetT<T>(data & (((T) 1 << cellCount) - (T) 1));
   }
 
-  const mybitset boundsLimit(const int N) const {
-    return mybitset(data & (((__uint128_t) 1 << N) - (__uint128_t) 1));
+  const mybitsetT<T> boundsLimit(const int N) const {
+    return mybitsetT<T>(data & (((T) 1 << N) - (T) 1));
   }
 
-  const mybitset operator~ () const noexcept {
-    return mybitset(~data);
+  const mybitsetT<T> operator~ () const noexcept {
+    return mybitsetT<T>(~data);
   }
 
-  const mybitset operator& (const mybitset& rhs) const noexcept {
-    return mybitset(data & rhs.data);
+  const mybitsetT<T> operator& (const mybitsetT<T>& rhs) const noexcept {
+    return mybitsetT<T>(data & rhs.data);
   }
 
-  mybitset& operator&= (const mybitset& rhs) noexcept {
+  mybitsetT<T>& operator&= (const mybitsetT<T>& rhs) noexcept {
     data &= rhs.data;
     return *this;
   }
 
-  const mybitset operator| (const mybitset& rhs) const noexcept {
-    return mybitset(data | rhs.data);
+  const mybitsetT<T> operator| (const mybitsetT<T>& rhs) const noexcept {
+    return mybitsetT<T>(data | rhs.data);
   }
 
-  mybitset& operator|= (const mybitset& rhs) noexcept {
+  mybitsetT<T>& operator|= (const mybitsetT<T>& rhs) noexcept {
     data |= rhs.data;
     return *this;
   }
 
-  const mybitset operator<< (size_t pos) const noexcept {
-    return mybitset(data << pos);
+  const mybitsetT<T> operator<< (size_t pos) const noexcept {
+    return mybitsetT<T>(data << pos);
   }
 
-  mybitset& operator<<= (size_t pos) noexcept {
+  mybitsetT<T>& operator<<= (size_t pos) noexcept {
     data <<= pos;
     return *this;
   }
 
-  const mybitset operator>> (size_t pos) const noexcept {
-    return mybitset(data >> pos);
+  const mybitsetT<T> operator>> (size_t pos) const noexcept {
+    return mybitsetT<T>(data >> pos);
   }
 
-  mybitset& operator>>= (size_t pos) noexcept {
+  mybitsetT<T>& operator>>= (size_t pos) noexcept {
     data >>= pos;
     return *this;
   }
 
-  const bool operator== (const mybitset& rhs) const noexcept {
+  const bool operator== (const mybitsetT<T>& rhs) const noexcept {
     return data == rhs.data;
   }
 
@@ -250,26 +251,28 @@ public:
   }
 
   void set(const int i) {
-    data |= ((__uint128_t) 1 << i);
+    data |= ((T) 1 << i);
   }
 
   void set(const int i, const bool value) {
-    data ^= (-value ^ data) & ((__uint128_t) 1 << i);
+    data ^= (-value ^ data) & ((T) 1 << i);
   }
 
   bool test(const int i) const {
-    return (data >> i) & (__uint128_t) 1;
+    return (data >> i) & (T) 1;
   }
 
   bool any() const {
     return data != 0;
   }
 
+  // TODO: specialize for smaller T
   const int getFirstSetBit() const {
     //return countr_zero(data);
     return clz_u128(data);
   }
 
+  // TODO: specialize for smaller T
   const int popcount() const {
     uint64_t hi = data >> 64;
     uint64_t lo = data;
@@ -277,90 +280,11 @@ public:
   }
 };
 
+typedef mybitsetT<__uint128_t> mybitset;
+typedef mybitsetT<__uint16_t> twoRowsBitset;
+typedef mybitsetT<__uint8_t> oneRowBitset;
+
 const mybitset firstTwoRowsSizeBig { (1 << twoRowsCellCount) - 1 };
-
-class twoRowsBitset {
-public:
-  uint16_t data;
-
-  twoRowsBitset() {
-    data = 0;
-  }
-
-  twoRowsBitset(__uint128_t data) {
-    this->data = data;
-  }
-
-  const twoRowsBitset operator~ () const noexcept {
-    return twoRowsBitset(~data);
-  }
-
-  const twoRowsBitset operator& (const twoRowsBitset& rhs) const noexcept {
-    return twoRowsBitset(data & rhs.data);
-  }
-
-  twoRowsBitset& operator&= (const twoRowsBitset& rhs) noexcept {
-    data &= rhs.data;
-    return *this;
-  }
-
-  const twoRowsBitset operator| (const twoRowsBitset& rhs) const noexcept {
-    return twoRowsBitset(data | rhs.data);
-  }
-
-  twoRowsBitset& operator|= (const twoRowsBitset& rhs) noexcept {
-    data |= rhs.data;
-    return *this;
-  }
-
-  const twoRowsBitset operator<< (size_t pos) const noexcept {
-    return twoRowsBitset(data << pos);
-  }
-
-  twoRowsBitset& operator<<= (size_t pos) noexcept {
-    data <<= pos;
-    return *this;
-  }
-
-  const twoRowsBitset operator>> (size_t pos) const noexcept {
-    return twoRowsBitset(data >> pos);
-  }
-
-  twoRowsBitset& operator>>= (size_t pos) noexcept {
-    data >>= pos;
-    return *this;
-  }
-
-  const bool operator== (const twoRowsBitset& rhs) const noexcept {
-    return data == rhs.data;
-  }
-
-  const uint64_t to_ullong() const {
-    return (uint64_t) data;
-  }
-
-  void set(const int i) {
-    data |= ((uint16_t) 1 << i);
-  }
-
-  void set(const int i, const bool value) {
-    data ^= (-value ^ data) & ((uint16_t) 1 << i);
-  }
-
-  bool test(const int i) const {
-    return (data >> i) & (uint16_t) 1;
-  }
-
-  bool any() const {
-    return data != 0;
-  }
-
-  const int getFirstSetBit() const {
-    return __builtin_ctz(data);
-  }
-};
-
-const mybitset firstTwoRowsSizeSmall { (1 << twoRowsCellCount) - 1 };
 
 class Bitboard {
 public:
@@ -411,8 +335,8 @@ public:
 class BitboardComponentTable {
 public:
   // Lookup for first row will be just setting row A to zero and row B to first row
-  uint32_t lookupTable2RowsIndex[lookupTableSizeFor2Rows][maxComponentsPerRow];
-  twoRowsBitset lookupTable2RowsComponent[lookupTableSizeFor2Rows][maxComponentsPerRow];
+  uint8_t lookupTable2RowsIndex[lookupTableSizeFor2Rows][maxComponentsPerRow];
+  oneRowBitset lookupTable2RowsComponent[lookupTableSizeFor2Rows][maxComponentsPerRow];
 
   BitboardComponentTable() {
 
@@ -491,7 +415,7 @@ public:
       return ret;
     };
 
-    for (uint64_t twoRows = 0; twoRows < lookupTableSizeFor2Rows; twoRows++) {
+    for (uint16_t twoRows = 0; twoRows < lookupTableSizeFor2Rows; twoRows++) {
       // For the first row we are interested first: if it continues or ends.
       // If it continues, we are interested in which bits to add to it.
       twoRowsBitset remaining { twoRows };
