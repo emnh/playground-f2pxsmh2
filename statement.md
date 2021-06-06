@@ -67,7 +67,7 @@ Say for example:
 Here we have input components (notice the first and second component are equal):
 ```
 101000 101000 000010
-111000 111000 000001
+111000 111000 000000
 ```
 
 And the output components are:
