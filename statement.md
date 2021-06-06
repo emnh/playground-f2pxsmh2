@@ -1,9 +1,14 @@
 # Fast Connected Components for 6x12 bitboard
 
+
+## Introduction
 This optimized code was made for Smash the Code contest. We assume that you are using one 6x12 bitboard per color,
 represented as the least significant bits of an 128 bit integer (__128int_t), which is supported by GCC.
 You can expect about say 800k-1M separations of one color into connected components,
 versus say 200k-250k for a regular bit-BFS per index.
+It depends on the hardware, but in general expect a 4x speedup over normal bit-BFS.
+
+## Preliminaries
 
 The main idea is to create a lookup table for the transition between 2 rows.
 This allows you to iterate over the rows 2 by 2 and connect the components already computed in the table.
@@ -24,6 +29,8 @@ This happens for example with this configuration:
 How many components can there be total? 72 / 2 = 36, using more or less the same logic as before, with a checkerboard pattern.
 We also save one "component" number 0 for inactive components, the background, so let it be 37 total.
 
+## The structure of the lookup table
+
 So what do we have so far?
 We have a lookup table for two rows, with index 0 to 2^12 = 4096.
 We'll soon describe what we store in the table.
@@ -43,6 +50,9 @@ shifted into the correct row of the current iteration on the 6x12 grid.
 
 The input components are indexed from bit index 0 to 5 in the first row.
 The output components are indexed from bit index 6 to 11 in the second row.
+To compute the components of the table you can use regular bit-BFS on each index which matches pattern "^1|01" in the 2 rows.
+
+## An example of the lookup table
 
 Say for example:
 101010
@@ -68,7 +78,7 @@ And for the last we have:
 So tableIndex[101010111001][2] = 000.
 And tableRow[101010111001][2] = 000000.
 
-To compute the components of the table you can use regular bit-BFS on each index which matches pattern "^1|01" in the 2 rows.
+## How to use the table in iteration over bitboard / grid rows
 
 Once you have the table initialized, the iteration proceeds as follows:
 First you prepend an empty row to your grid, so that the transition into the components of the first row is easy and fits into the loop.
@@ -105,16 +115,773 @@ runningComponent[0] = componentCount++, components[runningComponent[i]] = tableR
 
 For terminating a running component, just set its index to 0: runningComponent[i] = 0.
 
+## Optimizations
+
+You can skip empty rows.
+
+## Code
 
 ```C++ runnable
+#pragma GCC optimize("Ofast","unroll-loops","omit-frame-pointer","inline")
 #include <iostream>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+
+#include <chrono>
 
 using namespace std;
 
-int main() 
+using time_interval_t = std::chrono::microseconds;
+using myClock = std::chrono::high_resolution_clock;
+
+using namespace std;
+
+const int rowCount = 12;
+const int colCount = 6;
+const int twoRowsCellCount = 2 * colCount;
+const int colorCount = 6;
+const int cellCount = rowCount * colCount;
+const int backgroundCount = 1;
+const int maxComponents = backgroundCount + cellCount / 2;
+const int maxComponentsPerRow = colCount / 2 + colCount % 2;
+const int lookupTableSizeFor2Rows = 1 << (2 * colCount);
+
+constexpr bool DEBUG = false;
+
+inline int clz_u128 (__uint128_t u) {
+  uint64_t hi = u>>64;
+  uint64_t lo = u;
+  int retval[3]={
+    __builtin_ctzll(hi)+64,
+    __builtin_ctzll(lo),
+    128
+  };
+  int idx = !hi + ((!lo)&(!hi));
+  return retval[idx];
+}
+
+class mybitset {
+public:
+  __uint128_t data;
+
+  mybitset() {
+    data = 0;
+  }
+
+  mybitset(__uint128_t data) {
+    this->data = data;
+  }
+
+  const mybitset boundsLimit() const {
+    return mybitset(data & (((__uint128_t) 1 << cellCount) - (__uint128_t) 1));
+  }
+
+  const mybitset boundsLimit(const int N) const {
+    return mybitset(data & (((__uint128_t) 1 << N) - (__uint128_t) 1));
+  }
+
+  const mybitset operator~ () const noexcept {
+    return mybitset(~data);
+  }
+
+  const mybitset operator& (const mybitset& rhs) const noexcept {
+    return mybitset(data & rhs.data);
+  }
+
+  mybitset& operator&= (const mybitset& rhs) noexcept {
+    data &= rhs.data;
+    return *this;
+  }
+
+  const mybitset operator| (const mybitset& rhs) const noexcept {
+    return mybitset(data | rhs.data);
+  }
+
+  mybitset& operator|= (const mybitset& rhs) noexcept {
+    data |= rhs.data;
+    return *this;
+  }
+
+  const mybitset operator<< (size_t pos) const noexcept {
+    return mybitset(data << pos);
+  }
+
+  mybitset& operator<<= (size_t pos) noexcept {
+    data <<= pos;
+    return *this;
+  }
+
+  const mybitset operator>> (size_t pos) const noexcept {
+    return mybitset(data >> pos);
+  }
+
+  mybitset& operator>>= (size_t pos) noexcept {
+    data >>= pos;
+    return *this;
+  }
+
+  const bool operator== (const mybitset& rhs) const noexcept {
+    return data == rhs.data;
+  }
+
+  const uint64_t to_ullong() const {
+    return (uint64_t) data;
+  }
+
+  void set(const int i) {
+    data |= ((__uint128_t) 1 << i);
+  }
+
+  void set(const int i, const bool value) {
+    data ^= (-value ^ data) & ((__uint128_t) 1 << i);
+  }
+
+  bool test(const int i) const {
+    return (data >> i) & (__uint128_t) 1;
+  }
+
+  bool any() const {
+    return data != 0;
+  }
+
+  const int getFirstSetBit() const {
+    //return countr_zero(data);
+    return clz_u128(data);
+  }
+
+  const int popcount() const {
+    uint64_t hi = data >> 64;
+    uint64_t lo = data;
+    return __builtin_popcountll(lo) + __builtin_popcountll(hi);
+  }
+};
+
+const mybitset firstTwoRowsSizeBig { (1 << twoRowsCellCount) - 1 };
+
+class twoRowsBitset {
+public:
+  uint16_t data;
+
+  twoRowsBitset() {
+    data = 0;
+  }
+
+  twoRowsBitset(__uint128_t data) {
+    this->data = data;
+  }
+
+  const twoRowsBitset operator~ () const noexcept {
+    return twoRowsBitset(~data);
+  }
+
+  const twoRowsBitset operator& (const twoRowsBitset& rhs) const noexcept {
+    return twoRowsBitset(data & rhs.data);
+  }
+
+  twoRowsBitset& operator&= (const twoRowsBitset& rhs) noexcept {
+    data &= rhs.data;
+    return *this;
+  }
+
+  const twoRowsBitset operator| (const twoRowsBitset& rhs) const noexcept {
+    return twoRowsBitset(data | rhs.data);
+  }
+
+  twoRowsBitset& operator|= (const twoRowsBitset& rhs) noexcept {
+    data |= rhs.data;
+    return *this;
+  }
+
+  const twoRowsBitset operator<< (size_t pos) const noexcept {
+    return twoRowsBitset(data << pos);
+  }
+
+  twoRowsBitset& operator<<= (size_t pos) noexcept {
+    data <<= pos;
+    return *this;
+  }
+
+  const twoRowsBitset operator>> (size_t pos) const noexcept {
+    return twoRowsBitset(data >> pos);
+  }
+
+  twoRowsBitset& operator>>= (size_t pos) noexcept {
+    data >>= pos;
+    return *this;
+  }
+
+  const bool operator== (const twoRowsBitset& rhs) const noexcept {
+    return data == rhs.data;
+  }
+
+  const uint64_t to_ullong() const {
+    return (uint64_t) data;
+  }
+
+  void set(const int i) {
+    data |= ((uint16_t) 1 << i);
+  }
+
+  void set(const int i, const bool value) {
+    data ^= (-value ^ data) & ((uint16_t) 1 << i);
+  }
+
+  bool test(const int i) const {
+    return (data >> i) & (uint16_t) 1;
+  }
+
+  bool any() const {
+    return data != 0;
+  }
+
+  const int getFirstSetBit() const {
+    return __builtin_ctz(data);
+  }
+};
+
+const mybitset firstTwoRowsSizeSmall { (1 << twoRowsCellCount) - 1 };
+
+class Bitboard {
+public:
+  // Most Significant Bit is the last bit, map lower right, index cellCount - 1, rightmost bit.
+  // Least Significant Bit is the first bit, map upper left, index 0, leftmost bit.
+  // To shift one row down, shift right: << colCount.
+  // To shift one row up, shift left: >> colCount.
+
+  mybitset board;
+
+  void initRandom() {
+    for (int i = 0; i < cellCount; i++) {
+      bool val = rand() % 2 == 0;
+      board.set(i, val);
+    }
+  }
+
+  int getIndex(int x, int y) {
+    return x + y * colCount;
+  }
+
+  bool get(int x, int y) {
+    return board.test(getIndex(x, y));
+  }
+
+  bool test(int x, int y) {
+    return board.test(getIndex(x, y));
+  }
+
+  void set(int x, int y, bool value) {
+    board.set(getIndex(x, y), value);
+  }
+
+  inline void print() {
+    if constexpr (DEBUG) {
+      cerr << "BOARD:" << endl;
+      for (int y = 0; y < rowCount; y++) {
+        for (int x = 0; x < colCount; x++) {
+          cerr << (get(x, y) ? 1 : 0) << " ";
+        }
+        cerr << endl;
+      }
+      cerr << endl;
+    }
+  }
+};
+
+class BitboardComponentTable {
+public:
+  // Lookup for first row will be just setting row A to zero and row B to first row
+  uint32_t lookupTable2RowsIndex[lookupTableSizeFor2Rows][maxComponentsPerRow];
+  twoRowsBitset lookupTable2RowsComponent[lookupTableSizeFor2Rows][maxComponentsPerRow];
+
+  BitboardComponentTable() {
+
+    const int nbCount = 4;
+    const int maxQueue = nbCount * twoRowsCellCount;
+    int queue[maxQueue];
+
+    for (int i = 0; i < lookupTableSizeFor2Rows; i++) {
+      for (int componentIndex = 0; componentIndex < maxComponentsPerRow; componentIndex++) {
+        lookupTable2RowsIndex[i][componentIndex] = 0;
+        lookupTable2RowsComponent[i][componentIndex] = 0;
+      }
+    }
+
+    const auto& findComponents = [this, &queue]
+      (twoRowsBitset& remaining,
+       int startIndex,
+       int& componentIndex,
+       uint64_t twoRows
+      )
+    {
+      twoRowsBitset ret;
+      if (!remaining.test(startIndex)) {
+        return ret;
+      } else {
+        componentIndex++;
+        if (componentIndex >= maxComponentsPerRow) {
+          if constexpr (DEBUG) {
+            throw new out_of_range("componentIndex");
+          }
+        }
+      }
+      for (int qi = 0; qi < maxQueue; qi++) {
+        queue[qi] = 0;
+      }
+
+      int qIndex = 0;
+      int qlen = 1;
+      queue[qIndex] = startIndex;
+      while (qlen > 0 && qIndex < maxQueue) {
+        int topBitIndex = queue[qIndex];
+        qIndex++;
+        qlen--;
+
+        if (!remaining.test(topBitIndex)) {
+          continue;
+        }
+        remaining.set(topBitIndex, false);
+        ret.set(topBitIndex);
+
+        if (startIndex >= colCount && topBitIndex >= colCount) {
+          lookupTable2RowsComponent[twoRows][componentIndex].set(topBitIndex - colCount);
+        }
+
+        int nbs[nbCount];
+        nbs[0] = ((topBitIndex + 1) != colCount) ? topBitIndex + 1 : -1;
+        nbs[1] = (topBitIndex != colCount) ? topBitIndex - 1 : -1;
+        nbs[2] = topBitIndex + colCount;
+        nbs[3] = topBitIndex - colCount;
+
+        for (int nbi = 0; nbi < nbCount; nbi++) {
+          int nb = nbs[nbi];
+          if (0 <= nb && nb < twoRowsCellCount && remaining.test(nb)) {
+            if (qIndex + qlen < maxQueue) {
+              queue[qIndex + qlen] = nb;
+              qlen++;
+            } else {
+              if constexpr (DEBUG) {
+                throw new out_of_range("qIndex + qlen");
+              }
+            }
+          }
+        }
+      }
+
+      return ret;
+    };
+
+    for (uint64_t twoRows = 0; twoRows < lookupTableSizeFor2Rows; twoRows++) {
+      // For the first row we are interested first: if it continues or ends.
+      // If it continues, we are interested in which bits to add to it.
+      twoRowsBitset remaining { twoRows };
+
+      twoRowsBitset firstRemaining { twoRows };
+      int firstRowComponentIndex = -1;
+      twoRowsBitset oldComponents[3] = {0, 0, 0};
+      for (int startIndex = 0; startIndex < colCount; startIndex++) {
+        // For every space we reset so we can find next component
+        if (!remaining.test(startIndex)) {
+          firstRemaining = remaining;
+        }
+        twoRowsBitset oldComponent =
+          findComponents(firstRemaining, startIndex, firstRowComponentIndex, twoRows);
+        if (oldComponent.any()) {
+          oldComponents[firstRowComponentIndex] = oldComponent;
+        }
+      }
+
+      // If it ends, we are interested in what bits replace it.
+      twoRowsBitset secondRemaining { twoRows };
+      int secondRowComponentIndex = -1;
+      for (int startIndex = colCount; startIndex < twoRowsCellCount; startIndex++) {
+        // For every space we reset so we can find next component
+        if (!remaining.test(startIndex)) {
+          secondRemaining = remaining;
+        }
+        twoRowsBitset newComponent =
+          findComponents(secondRemaining, startIndex, secondRowComponentIndex, twoRows);
+        if (newComponent.any()) {
+          for (int i = 0; i < maxComponentsPerRow; i++) {
+            if (newComponent == oldComponents[i]) {
+              lookupTable2RowsIndex[twoRows][secondRowComponentIndex] |= (1 << i);
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+BitboardComponentTable& bitboardComponentTable = *(new BitboardComponentTable());
+
+class BitboardComponents {
+public:
+  int componentCount = 0;
+  Bitboard components[maxComponents];
+
+  const static int nbCount = 4;
+  const static int maxQueue = nbCount * cellCount;
+  int queue[maxQueue];
+
+  // This is classic BFS, not needed, just for comparison.
+  mybitset findComponents(
+    mybitset& remaining,
+    int startIndex,
+    int& componentIndex
+    ) {
+    mybitset ret;
+    if (!remaining.test(startIndex)) {
+      return ret;
+    } else {
+      componentIndex++;
+    }
+    for (int qi = 0; qi < maxQueue; qi++) {
+      queue[qi] = 0;
+    }
+
+    int qIndex = 0;
+    int qlen = 1;
+    queue[qIndex] = startIndex;
+    while (qlen > 0 && qIndex < maxQueue) {
+      int topBitIndex = queue[qIndex];
+      qIndex++;
+      qlen--;
+
+      if (!remaining.test(topBitIndex)) {
+        continue;
+      }
+      remaining.set(topBitIndex, false);
+      ret.set(topBitIndex);
+
+      int nbs[nbCount];
+      nbs[0] = ((topBitIndex + 1) % colCount != 0) ? topBitIndex + 1 : -1;
+      nbs[1] = ((topBitIndex % colCount) != 0) ? topBitIndex - 1 : -1;
+      nbs[2] = topBitIndex + colCount;
+      nbs[3] = topBitIndex - colCount;
+
+      for (int nbi = 0; nbi < nbCount; nbi++) {
+        int nb = nbs[nbi];
+        if (0 <= nb && nb < cellCount && remaining.test(nb)) {
+          if (qIndex + qlen < maxQueue) {
+            queue[qIndex + qlen] = nb;
+            qlen++;
+          } else {
+            if constexpr (DEBUG) {
+              throw new out_of_range("qIndex + qlen");
+            }
+          }
+        }
+      }
+    }
+
+    return ret;
+  }
+
+  // This is classic BFS, not needed, just for comparison.
+  void GetComponentsBFS(Bitboard board) {
+    mybitset firstRemaining { board.board };
+    int firstRowComponentIndex = -1;
+    while (firstRemaining.any()) {
+      int startIndex = firstRemaining.getFirstSetBit();
+      mybitset oldComponent =
+        findComponents(firstRemaining, startIndex, firstRowComponentIndex);
+      if (oldComponent.any()) {
+        components[firstRowComponentIndex].board = oldComponent;
+        componentCount = firstRowComponentIndex + 1;
+      }
+    }
+  }
+
+  void GetComponents(const Bitboard& board) {
+    components[0].board = 0;
+    componentCount = 1;
+
+    int currentComponents[maxComponentsPerRow];
+    for (int i = 0; i < maxComponentsPerRow; i++) {
+      currentComponents[i] = 0;
+    }
+
+    // Make row least significant colCount bits zero, the rest set to board.board. I.e. top row is zero.
+    mybitset rows { board.board.boundsLimit() };
+    rows <<= colCount;
+
+    int y = 0;
+    while (rows.any()) {
+      const uint64_t bits = (rows & firstTwoRowsSizeBig).to_ullong();
+      rows >>= colCount;
+      if ((bits >> colCount) == 0) {
+        // Terminate components if second row is empty
+        for (int c = 0; c < maxComponentsPerRow; c++) {
+          currentComponents[c] = 0;
+        }
+        y++;
+        continue;
+      }
+
+      int oldComponents[maxComponentsPerRow];
+      for (int c = 0; c < maxComponentsPerRow; c++) {
+        oldComponents[c] = currentComponents[c];
+      }
+
+      for (int c = 0; c < maxComponentsPerRow; c++) {
+        const uint32_t componentIndex = bitboardComponentTable.lookupTable2RowsIndex[bits][c];
+        const Bitboard componentChange { bitboardComponentTable.lookupTable2RowsComponent[bits][c].data };
+        
+        currentComponents[c] = 0;
+
+        if (componentIndex > 0) {
+          // Continue old components
+          for (int i = 0; i < maxComponentsPerRow; i++) {
+            const bool copyOldComponent = (componentIndex >> i) & 1UL;
+            if (copyOldComponent) {
+              
+              if (currentComponents[c] <= 0) {
+                currentComponents[c] = oldComponents[i];
+              } else if (currentComponents[c] != oldComponents[i]) {
+                components[currentComponents[c]].board |= components[oldComponents[i]].board;
+
+                // Merge                
+                components[oldComponents[i]].board = 0;
+                int mergeComponent = oldComponents[i];
+                for (int j = 0; j < maxComponentsPerRow; j++) {
+                  if (oldComponents[j] == mergeComponent) {
+                    oldComponents[j] = currentComponents[c];
+                  }
+                  if (currentComponents[j] == mergeComponent) {
+                    currentComponents[j] = currentComponents[c];
+                  }
+                }
+
+              }
+            }
+          }
+          components[currentComponents[c]].board |= componentChange.board << (y * colCount);
+        } else if (componentChange.board.any()) {
+          // Create new component
+          currentComponents[c] = componentCount;
+          components[currentComponents[c]].board = 0;
+          componentCount++;
+          components[currentComponents[c]].board |= componentChange.board << (y * colCount);
+        } else {
+          // Terminate component
+          currentComponents[c] = 0;
+        }
+      }
+      y++;
+    }
+  }
+};
+
+uint64_t x { 1 }; /* The state can be seeded with any value. */
+uint64_t next()
 {
-    cout << "Complete code will be forthcoming!";
-    return 0;
+    uint64_t z = (x += UINT64_C(0x9E3779B97F4A7C15));
+    z = (z ^ (z >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
+    z = (z ^ (z >> 27)) * UINT64_C(0x94D049BB133111EB);
+    return z ^ (z >> 31);
+}
+
+class BitboardColors {
+public:
+  Bitboard boards[colorCount];
+  bool valid = false;
+
+  void initRandom() {
+    __uint128_t r1 = (next() & next()) | (((next() & next()) << twoRowsCellCount) & (((__uint128_t) (1) << 64) - 1));
+    __uint128_t r2 = (next() & next()) | (((next() & next()) << twoRowsCellCount) & (((__uint128_t) (1) << 64) - 1));
+    __uint128_t r = r1 & r2;
+    boards[1].board = r;
+  }
+
+  BitboardColors fall() {
+    BitboardColors ret = *this;
+    bool changed = true;
+    while (changed) {
+      changed = false;
+
+      // We want to have one in a position that is free and which has a gem above it, so that it falls.
+      // Invert the free positions and check whether it is one (free) and has one above.
+      Bitboard free;
+      for (int i = 0; i < colorCount; i++) {
+        free.board |= ret.boards[i].board;
+      }
+      free.board = (~free.board).boundsLimit();
+
+      Bitboard temp;
+      for (int i = 0; i < colorCount; i++) {
+        temp.board = free.board & (ret.boards[i].board << colCount);
+        // If any falls, changed is true.
+        changed = changed || temp.board.any();
+        // Add all fallen positions, then remove them from the row above.
+        ret.boards[i].board = (ret.boards[i].board | temp.board) & ~(temp.board >> colCount);
+      }
+    }
+    return ret;
+  }
+
+  int getScore() {
+    int score = 0;
+    int CPI = 0;
+    BitboardColors next = *this;
+    bool changed = true;
+
+    while (changed && CPI < 10) {
+      changed = false;
+      next = next.fall();
+
+      int B = 0;
+      int CBI = 0;
+      int GBI = 0;
+      const int CPS[] = {0, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
+      const int CBS[] = {0, 0, 2, 4, 8, 16};
+      const int GBS[] = {0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 8};
+      for (int color = 1; color < colorCount; color++) {
+        BitboardComponents bc;
+        // cerr << "BEFORE" << endl;
+        //next.boards[color].print();
+        bc.GetComponents(next.boards[color]);
+        bool thisColor = false;
+        for (int c = 1; c < bc.componentCount; c++) {
+          int popcount = bc.components[c].board.popcount();
+          cerr << "COMPONENT: " << popcount << endl;
+          bc.components[c].print();
+          if (popcount >= 4) {
+            B += popcount;
+            if (!thisColor) {
+              CBI++;
+              thisColor = true;
+            }
+            GBI += popcount;
+            // Eliminate group
+            cerr << "BEFORE" << endl;
+            next.boards[color].print();
+            next.boards[color].board &= (~bc.components[c].board).boundsLimit();
+            cerr << "AFTER" << endl;
+            next.boards[color].print();
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        int part = (CPS[CPI] + CBS[CBI] + GBS[min(11, GBI)]);
+        int stepScore = (10 * B) * max(1, min(999, part));
+        score += stepScore;
+        CPI++;
+      }
+      for (int i = 0; i < colorCount; i++) {
+          cerr << "i: " << i << ", pc: " << next.boards[i].board.boundsLimit().popcount() << ", score: " << score << endl;
+          next.boards[i].print();
+      }
+    }
+
+    return score;
+  }
+
+  BitboardColors placeBrick(int colorA, int colorB, int x, int rotation) {
+    Bitboard total;
+    for (int i = 0; i < colorCount; i++) {
+      total.board |= boards[i].board;
+    }
+
+    int y = 0;
+    int dx = 0;
+    int dy = 0;
+    bool valid = 0 <= x && x < colCount;
+    if (rotation == 0) {
+      dx = 1;
+      valid =
+        0 <= x + dx && x + dx < colCount &&
+        !total.test(x, 0) && !total.test(x + dx, 0);
+    } else if (rotation == 1) {
+      y = 1;
+      dy = -1;
+      valid = !total.test(x, 1);
+    } else if (rotation == 2) {
+      dx = -1;
+      valid =
+        0 <= x + dx && x + dx < colCount &&
+        !total.test(x, 0) &&
+        x + dx >= 0 && !total.test(x + dx, 0);
+    } else if (rotation == 3) {
+      y = 0;
+      dy = 1;
+      valid = !total.test(x, 1);
+    }
+
+    BitboardColors ret = *this;
+    ret.valid = valid;
+    if (!valid) {
+      return ret;
+    }
+
+    // Drop brick
+    ret.boards[colorA].set(x, y, true);
+    ret.boards[colorB].set(x + dx, y + dy, true);
+    return ret.fall();
+  }
+};
+
+int main() {
+  const int boardCount = 10;
+  BitboardColors boards[boardCount];
+  for (int i = 0; i < boardCount; i++) {
+    boards[i].initRandom();
+  }
+
+  const uint64_t maxi = 1000000;
+
+  // First game loop: MUST uncomment to test perf on CodinGame, to read input data, or perf is very low.
+//   for (int i = 0; i < 8; i++) {
+//       int colorA; // color of the first block
+//       int colorB; // color of the attached block
+//       cin >> colorA >> colorB; cin.ignore();
+//   }
+//   int score1;
+//   cin >> score1; cin.ignore();
+//   for (int i = 0; i < 12; i++) {
+//       string row; // One line of the map ('.' = empty, '0' = skull block, '1' to '5' = colored block)
+//       cin >> row; cin.ignore();
+//   }
+//   int score2;
+//   cin >> score2; cin.ignore();
+//   for (int i = 0; i < 12; i++) {
+//       string row;
+//       cin >> row; cin.ignore();
+//   }
+
+  int i = 0;
+  BitboardComponents bc;
+  bool done = false;
+  uint64_t bits = 0;
+  auto start = myClock::now();
+
+  for (int i = 0; i < maxi; i++) {
+    // boards.initRandom();
+    bc.GetComponents(boards[next() % boardCount].boards[1]);
+    bits ^= bc.components[0].board.to_ullong();
+  }
+  const auto elapsed2 =
+    std::chrono::duration_cast<time_interval_t>(myClock::now() - start);
+  cerr << "advanced elapsed: " << elapsed2.count() << ", iterations: " << maxi << ", iterations/100ms: " << 100000 * maxi / elapsed2.count() << endl;
+
+  start = myClock::now();
+  for (int i = 0; i < maxi; i++) {
+    // boards.initRandom();
+    bc.GetComponentsBFS(boards[next() % boardCount].boards[1]);
+    bits ^= bc.components[0].board.to_ullong();
+  }
+  const auto elapsed3 =
+    std::chrono::duration_cast<time_interval_t>(myClock::now() - start);
+  cerr << "normal elapsed: " << elapsed3.count() << ", iterations: " << maxi << ", iterations/100ms: " << 100000 * maxi / elapsed3.count() << endl;
+  cerr << bits << endl;
+
+  // "x rotation": the column in which to drop your pair of blocks followed by its rotation (0, 1, 2 or 3)
+  cout << "0 1" << endl;
+
+  return 0;
 }
 ```
 
