@@ -104,6 +104,7 @@ First, save oldComponents[3] = runningComponents[3] and do runningComponents[3] 
 For each row looked up, there are 3 cases: continue component, new component and terminate component.
 If the tableIndex is > 0, we continue, else if tableRow > 0, new component, and else terminate component.
 
+### Continue component
 If tableIndex is > 0, then add (|, or, union) the oldComponents corresponding to the tableIndex bits together to form the new runningComponent.
 Then add the tableRow also to the component to account for new bits of this row.
 There is a special case to handle, which is if two or more bits are set in the index, because this means to merge two components.
@@ -125,9 +126,11 @@ Here's the merge handling:
     }
 ```
 
+### New component
 For a new running component, allocate a new component index and set the indexed component to the tableRow.
 runningComponent[0] = componentCount++, components[runningComponent[i]] = tableRow.
 
+### Terminate component
 For terminating a running component, just set its index to 0: runningComponent[i] = 0.
 
 ## Optimizations
