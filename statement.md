@@ -29,7 +29,7 @@ This happens for example with this configuration:
 001000
 ```
 
-How many components can there be total? 72 / 2 = 36, using more or less the same logic as before, with a checkerboard pattern.
+How many components can there be total? 6 * 12 / 2 = 72 / 2 = 36, using more or less the same logic as before, with a checkerboard pattern.
 We also save one "component" number 0 for inactive components, the background, so let it be 37 total.
 
 ## The structure of the lookup table
