@@ -626,9 +626,12 @@ public:
   bool valid = false;
 
   void initRandom() {
-    __uint128_t r1 = (next() & next()) | (((next() & next()) << twoRowsCellCount) & (((__uint128_t) (1) << 64) - 1));
-    __uint128_t r2 = (next() & next()) | (((next() & next()) << twoRowsCellCount) & (((__uint128_t) (1) << 64) - 1));
-    __uint128_t r = r1 & r2;
+    // This will initialize probably around 5-15 bits, experimentally found. I think it's 1/(2^3) = 1/8 prob for each bit of the 72, so 9 expected.
+    __uint128_t r1 = (next()) | ((((__uint128_t) next()) << twoRowsCellCount) & ~(((__uint128_t) (1) << 64) - 1));
+    __uint128_t r2 = (next()) | ((((__uint128_t) next()) << twoRowsCellCount) & ~(((__uint128_t) (1) << 64) - 1));
+    __uint128_t r3 = (next()) | ((((__uint128_t) next()) << twoRowsCellCount) & ~(((__uint128_t) (1) << 64) - 1));
+    __uint128_t r = r1 & r2 & r3;
+    // cerr << "COUNT: " << mybitset(r).popcount() << endl;
     boards[1].board = r;
   }
 };
