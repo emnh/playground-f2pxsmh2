@@ -2,7 +2,8 @@
 
 
 ## Introduction
-This optimized code was made for Smash the Code contest. We assume that you are using one 6x12 bitboard per color,
+This optimized code was made for [Smash the Code](https://www.codingame.com/multiplayer/bot-programming/smash-the-code) contest.
+We assume that you are using one 6x12 bitboard per color,
 represented as the least significant bits of an 128 bit integer (__uint128_t), which is supported by GCC.
 You can expect about say 800k-1M separations of one color into connected components,
 versus say 200k-250k for a regular bit-BFS per index.
