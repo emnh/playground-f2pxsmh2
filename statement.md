@@ -21,10 +21,12 @@ which is greater than the columns, 6, so there are at most 3 components.
 This means we can keep 3 running active components and seal components as soon as they finish.
 There is a caveat to this, in that one running component can terminate while another running component keeps it active.
 This happens for example with this configuration:
-111
-101
-001
-001
+```
+111000
+101000
+001000
+001000
+```
 
 How many components can there be total? 72 / 2 = 36, using more or less the same logic as before, with a checkerboard pattern.
 We also save one "component" number 0 for inactive components, the background, so let it be 37 total.
@@ -55,28 +57,40 @@ To compute the components of the table you can use regular bit-BFS on each index
 ## An example of the lookup table
 
 Say for example:
+```
 101010
 111001
+```
 
 Here we have input components (notice the first and second component are equal):
+```
 101000 101000 000010
 111000 111000 000001
+```
 
 And the output components are:
+```
 101000 000000 000000
 111000 000001 000000
+```
 
 So since the first output component is equal to the first and second input component we store index 011 for the first output component to indicate this.
+```
 So tableIndex[101010111001][0] = 011.
 And tableRow[101010111001][0] = 111000.
+```
 
 Further, the two other components do not continue an input component, so we have:
+```
 So tableIndex[101010111001][1] = 000.
 And tableRow[101010111001][1] = 000001.
+```
 
 And for the last we have:
+```
 So tableIndex[101010111001][2] = 000.
 And tableRow[101010111001][2] = 000000.
+```
 
 ## How to use the table in iteration over bitboard / grid rows
 
