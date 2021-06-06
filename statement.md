@@ -630,7 +630,7 @@ public:
     __uint128_t r1 = (next()) | ((((__uint128_t) next()) << twoRowsCellCount) & ~(((__uint128_t) (1) << 64) - 1));
     __uint128_t r2 = (next()) | ((((__uint128_t) next()) << twoRowsCellCount) & ~(((__uint128_t) (1) << 64) - 1));
     __uint128_t r3 = (next()) | ((((__uint128_t) next()) << twoRowsCellCount) & ~(((__uint128_t) (1) << 64) - 1));
-    __uint128_t r = r1 & r2 & r3;
+    __uint128_t r = r1 & r2 & r3 & (((__uint128_t) (1) << cellCount) - 1);
     // cerr << "COUNT: " << mybitset(r).popcount() << endl;
     boards[1].board = r;
   }
