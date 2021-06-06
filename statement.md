@@ -151,8 +151,6 @@ using namespace std;
 using time_interval_t = std::chrono::microseconds;
 using myClock = std::chrono::high_resolution_clock;
 
-using namespace std;
-
 const int rowCount = 12;
 const int colCount = 6;
 const int twoRowsCellCount = 2 * colCount;
