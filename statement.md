@@ -136,7 +136,13 @@ For terminating a running component, just set its index to 0: runningComponent[i
 
 ## Optimizations
 
-You can skip empty rows.
+You can skip empty rows (this is done in the example code).
+
+It is possible to further optimize the code to achieve twice the speed, for 2M iterations per 100ms.
+One big improvement you can make is to preprocess the input and remove solitary bits with no neighbours,
+that is, components of size 1,
+as for StC we are only interested in components of size 4 or more.
+You can do this with a few bit operations on the grid.
 
 ## Code
 
