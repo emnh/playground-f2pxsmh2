@@ -10,7 +10,7 @@ versus say 200k-250k for a regular bit-BFS per index.
 It depends on the hardware, but in general expect a 4x speedup over normal bit-BFS.
 The output is an array of components, which are themselves 6x12 bitboards.
 
-# Resources
+## Resources
 Alternative ways to do this algorithm can be found at Wikipedia (perhaps a bit-optimized version of one of these can be even faster than this algorithm(?)):
 [Connected-component labeling](https://en.wikipedia.org/wiki/Connected-component_labeling) and
 [Flood fill](https://en.wikipedia.org/wiki/Flood_fill).
