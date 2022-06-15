@@ -1,5 +1,7 @@
 # Fast Connected Components for 6x12 bitboard
 
+## Deprecated
+This article is now deprecated in favour of a [faster and simpler version using BFS](https://tech.io/playgrounds/75040/fast-6x12-connected-components-using-bit-optimized-bfs). 
 
 ## Introduction
 This optimized code was made for [Smash the Code](https://www.codingame.com/multiplayer/bot-programming/smash-the-code) contest.
